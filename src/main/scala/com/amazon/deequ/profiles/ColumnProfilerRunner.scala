@@ -49,6 +49,7 @@ class ColumnProfilerRunner {
       fileOutputOptions: ColumnProfilerRunBuilderFileOutputOptions,
       metricsRepositoryOptions: ColumnProfilerRunBuilderMetricsRepositoryOptions,
       correlation: Boolean,
+      histogram: Boolean,
       kllProfiling: Boolean,
       kllParameters: Option[KLLParameters],
       predefinedTypes: Map[String, DataTypeInstances.Value])
@@ -69,6 +70,7 @@ class ColumnProfilerRunner {
         metricsRepositoryOptions.failIfResultsForReusingMissing,
         metricsRepositoryOptions.saveOrAppendResultsKey,
         correlation,
+        histogram,
         kllProfiling,
         kllParameters,
         predefinedTypes

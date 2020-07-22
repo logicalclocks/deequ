@@ -40,6 +40,7 @@ class ColumnProfilerRunBuilder(val data: DataFrame) {
   protected var saveConstraintSuggestionsJsonPath: Option[String] = None
   protected var saveEvaluationResultsJsonPath: Option[String] = None
   protected var correlation = true
+  protected var histogram = true
   protected var kllProfiling = false
   protected var kllParameters: Option[KLLParameters] = None
   protected var predefinedTypes: Map[String, DataTypeInstances.Value] = Map.empty
@@ -112,10 +113,18 @@ class ColumnProfilerRunBuilder(val data: DataFrame) {
   }
 
   /**
-   * Enable correlation profiling on Numerical columns, disabled by default.
+   * Enable correlation profiling on Numerical columns, enabled by default.
    */
-  def withCorrelation(): this.type = {
-    this.correlation = true
+  def withCorrelation(correlation: Boolean): this.type = {
+    this.correlation = correlation
+    this
+  }
+
+  /**
+   * Enable histogram profiling on Numerical columns, enabled by default.
+   */
+  def withHistogram(histogram: Boolean): this.type = {
+    this.histogram = histogram
     this
   }
 
@@ -190,6 +199,7 @@ class ColumnProfilerRunBuilder(val data: DataFrame) {
         failIfResultsForReusingMissing,
         saveOrAppendResultsKey),
       correlation,
+      histogram,
       kllProfiling,
       kllParameters,
       predefinedTypes

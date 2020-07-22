@@ -26,6 +26,7 @@ abstract class ColumnProfile {
   def completeness: Double
   def distinctness: Double
   def entropy: Double
+  def uniqueness: Double
   def approximateNumDistinctValues: Long
   def dataType: DataTypeInstances.Value
   def isDataTypeInferred: Boolean
@@ -38,6 +39,7 @@ case class StandardColumnProfile(
     completeness: Double,
     distinctness: Double,
     entropy: Double,
+    uniqueness: Double,
     approximateNumDistinctValues: Long,
     dataType: DataTypeInstances.Value,
     isDataTypeInferred: Boolean,
@@ -50,6 +52,7 @@ case class NumericColumnProfile(
     completeness: Double,
     distinctness: Double,
     entropy: Double,
+    uniqueness: Double,
     approximateNumDistinctValues: Long,
     dataType: DataTypeInstances.Value,
     isDataTypeInferred: Boolean,
@@ -95,6 +98,7 @@ object ColumnProfiles {
       columnProfileJson.addProperty("completeness", profile.completeness)
       columnProfileJson.addProperty("distinctness", profile.distinctness)
       columnProfileJson.addProperty("entropy", profile.entropy)
+      columnProfileJson.addProperty("uniqueness", profile.uniqueness)
       columnProfileJson.addProperty("approximateNumDistinctValues",
         profile.approximateNumDistinctValues)
 
@@ -191,7 +195,7 @@ object ColumnProfiles {
     json.add("columns", columns)
 
     val gson = new GsonBuilder()
-      .setPrettyPrinting()
+      // .setPrettyPrinting()
       .create()
 
     gson.toJson(json)
