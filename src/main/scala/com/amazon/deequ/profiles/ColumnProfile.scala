@@ -16,9 +16,9 @@
 
 package com.amazon.deequ.profiles
 
-import com.amazon.deequ.analyzers.DataTypeInstances
+import com.amazon.deequ.analyzers.{ApproxCountDistinct, DataTypeInstances, InMemoryStateProvider}
 import com.amazon.deequ.metrics.{BucketDistribution, Distribution}
-import com.google.gson.{Gson, GsonBuilder, JsonArray, JsonObject, JsonPrimitive}
+import com.google.gson.{Gson, GsonBuilder, JsonArray, JsonElement, JsonObject, JsonPrimitive}
 
 /* Profiling results for the columns which will be given to the constraint suggestion engine */
 abstract class ColumnProfile {
@@ -32,6 +32,9 @@ abstract class ColumnProfile {
   def isDataTypeInferred: Boolean
   def typeCounts: Map[String, Long]
   def histogram: Option[Distribution]
+  def approximateNumDistinctValuesState: Option[Seq[Long]]
+  def count: Option[Long]
+  def schemaDataType: Option[String]
 }
 
 case class StandardColumnProfile(
@@ -44,7 +47,10 @@ case class StandardColumnProfile(
     dataType: DataTypeInstances.Value,
     isDataTypeInferred: Boolean,
     typeCounts: Map[String, Long],
-    histogram: Option[Distribution])
+    histogram: Option[Distribution],
+    approximateNumDistinctValuesState: Option[Seq[Long]] = None,
+    count: Option[Long] = None,
+    schemaDataType: Option[String] = None)
   extends ColumnProfile
 
 case class NumericColumnProfile(
@@ -65,7 +71,10 @@ case class NumericColumnProfile(
     sum: Option[Double],
     stdDev: Option[Double],
     approxPercentiles: Option[Seq[Double]],
-    correlation: Option[Map[String, Double]])
+    correlation: Option[Map[String, Double]],
+    approximateNumDistinctValuesState: Option[Seq[Long]] = None,
+    count: Option[Long] = None,
+    schemaDataType: Option[String] = None)
   extends ColumnProfile
 
 case class ColumnProfiles(
@@ -88,6 +97,14 @@ object ColumnProfiles {
       columnProfileJson.addProperty("dataType", profile.dataType.toString)
       columnProfileJson.addProperty("isDataTypeInferred", profile.isDataTypeInferred.toString)
 
+      if (profile.count.isDefined) {
+        columnProfileJson.addProperty("count", profile.count.get)
+      }
+
+      if (profile.schemaDataType.isDefined) {
+        columnProfileJson.addProperty("schemaDataType", profile.schemaDataType.get)
+      }
+
       if (profile.typeCounts.nonEmpty) {
         val typeCountsJson = new JsonObject()
         profile.typeCounts.foreach { case (typeName, count) =>
@@ -108,6 +125,14 @@ object ColumnProfiles {
 
       columnProfileJson.addProperty("approximateNumDistinctValues",
         profile.approximateNumDistinctValues)
+
+      if (profile.approximateNumDistinctValuesState.isDefined) {
+        val wordArray = new JsonArray()
+        val words = profile.approximateNumDistinctValuesState.get
+        words.foreach(word => wordArray.add(new JsonPrimitive(word)))
+        columnProfileJson.add("approximateNumDistinctValuesStates",
+          wordArray)
+      }
 
       if (profile.histogram.isDefined) {
         val histogram = profile.histogram.get
