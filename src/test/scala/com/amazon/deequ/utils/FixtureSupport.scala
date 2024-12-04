@@ -18,10 +18,8 @@ package com.amazon.deequ.utils
 
 import com.amazon.deequ.analyzers.DataTypeInstances
 import com.amazon.deequ.profiles.NumericColumnProfile
-import org.apache.spark.sql.types.StructType
-import org.apache.spark.sql.DataFrame
-import org.apache.spark.sql.Row
-import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.types.{DoubleType, IntegerType, LongType, MapType, StringType, StructField, StructType}
+import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 
 import scala.util.Random
 
@@ -287,6 +285,18 @@ trait FixtureSupport {
     ).toDF("item", "att1", "att2")
   }
 
+  def getDfWithDecimalFractionalValues(sparkSession: SparkSession): DataFrame = {
+    import sparkSession.implicits._
+    Seq(
+      ("1", BigDecimal(1.0), BigDecimal(0.0)),
+      ("2", BigDecimal(2.0), BigDecimal(0.0)),
+      ("3", BigDecimal(3.0), BigDecimal(0.0)),
+      ("4", BigDecimal(4.0), BigDecimal(5.0)),
+      ("5", BigDecimal(5.0), BigDecimal(6.0)),
+      ("6", BigDecimal(6.0), BigDecimal(7.0))
+    ).toDF("item", "att1", "att2")
+  }
+
   def getDfWithNumericFractionalValuesForKLL(sparkSession: SparkSession): DataFrame = {
     import sparkSession.implicits._
     Seq(
@@ -336,6 +346,39 @@ trait FixtureSupport {
     )
     .toDF("unique", "nonUnique", "nonUniqueWithNulls", "uniqueWithNulls",
       "onlyUniqueWithOtherNonUnique", "halfUniqueCombinedWithNonUnique")
+  }
+
+  def getDfWithNas(sparkSession: SparkSession): DataFrame = {
+    import org.apache.spark.sql.functions._
+
+    val schema = StructType( Array(
+      StructField("nullstr", StringType, true),
+      StructField("nullstrmixed", StringType, true),
+      StructField("nullint", IntegerType, true),
+      StructField("nullintmixed", IntegerType, true),
+      StructField("nulldbl", DoubleType, true),
+      StructField("nulldblna", DoubleType, true),
+      StructField("nulldblnamixed", DoubleType, true),
+      StructField("nullna", DoubleType, true)
+    ))
+
+    val data = Seq(
+      Row(null, "b", null, 2, null, java.lang.Double.NaN, 2.0, java.lang.Double.NaN),
+      Row(null, null, null, null, null, null, null, java.lang.Double.NaN),
+      Row(null, "c", null, 1, null, java.lang.Double.NaN, 1.0, java.lang.Double.NaN),
+      Row(null, null, null, null, null, null, java.lang.Double.NaN, java.lang.Double.NaN),
+      Row(null, "a", null, 0, null, null, 1.0, java.lang.Double.NaN),
+      Row(null, "a", null, 0, null, null, 1.0, java.lang.Double.NaN)
+    )
+
+    val nulldf = sparkSession.createDataFrame(
+      sparkSession.sparkContext.parallelize(data),
+      schema
+    )
+
+    nulldf.withColumn("nullstrmixed2",
+                  when(col("nullstrmixed").equalTo("null"), null)
+                  .otherwise(col("nullstrmixed")))
   }
 
   def getDfWithDistinctValues(sparkSession: SparkSession): DataFrame = {
@@ -480,7 +523,11 @@ trait FixtureSupport {
     NumericColumnProfile(
       column = columnName,
       completeness = completeness,
+      distinctness = Some(1.0),
+      entropy = Some(1.0),
+      uniqueness = Some(1.0),
       approximateNumDistinctValues = 1000,
+      exactNumDistinctValues = Some(1000L),
       dataType = dataType,
       isDataTypeInferred = false,
       typeCounts = Map[String, Long](),
@@ -491,7 +538,8 @@ trait FixtureSupport {
       minimum = Some(minimum),
       sum = Some(1000.879),
       stdDev = Some(1.023),
-      approxPercentiles = None
+      approxPercentiles = None,
+      correlation = None
     )
   }
 }

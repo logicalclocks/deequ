@@ -4,22 +4,11 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
-    <groupId>com.amazon.deequ</groupId>
-    <artifactId>deequ</artifactId>
+    <groupId>com.logicalclocks</groupId>
+    <artifactId>deequ_${scala.major.version}</artifactId>
+<!--    <groupId>com.amazon.deequ</groupId>-->
+<!--    <artifactId>deequ</artifactId>-->
     <version>2.0.7-spark-3.5</version>
-
-    <properties>
-        <maven.compiler.source>1.8</maven.compiler.source>
-        <maven.compiler.target>1.8</maven.compiler.target>
-        <encoding>UTF-8</encoding>
-
-        <scala.major.version>2.12</scala.major.version>
-        <scala.version>${scala.major.version}.10</scala.version>
-        <artifact.scala.version>${scala.major.version}</artifact.scala.version>
-        <scala-maven-plugin.version>4.8.1</scala-maven-plugin.version>
-
-        <spark.version>3.5.0</spark.version>
-    </properties>
 
     <name>deequ</name>
     <description>Deequ is a library built on top of Apache Spark for defining "unit tests for data",
@@ -67,6 +56,48 @@
         <url>https://github.com/awslabs/deequ</url>
     </scm>
 
+    
+    <!-- awslabs/deeque@2.0.4 does only have the following properties. There are not multiple profiles -->
+    <!-- <properties>
+        <maven.compiler.source>1.8</maven.compiler.source>
+        <maven.compiler.target>1.8</maven.compiler.target>
+        <encoding>UTF-8</encoding>
+
+        <scala.major.version>2.12</scala.major.version>
+        <scala.version>${scala.major.version}.10</scala.version>
+        <artifact.scala.version>${scala.major.version}</artifact.scala.version>
+        <scala-maven-plugin.version>4.8.1</scala-maven-plugin.version>
+
+        <spark.version>3.3.0</spark.version>
+    </properties> -->
+
+    <properties>
+        <maven.compiler.source>1.8</maven.compiler.source>
+        <maven.compiler.target>1.8</maven.compiler.target>
+        <encoding>UTF-8</encoding>
+
+        <!-- Scala -->
+        <scala.major.version>${scala-212.major.version}</scala.major.version>
+        <scala.version>${scala.major.version}.10</scala.version>
+        <scala-211.major.version>2.11</scala-211.major.version>
+        <scala-212.major.version>2.12</scala-212.major.version>
+        <artifact.scala.version>_scala-${scala.major.version}</artifact.scala.version>
+        <artifact.spark.version>_spark-${spark.version}</artifact.spark.version>
+        <scala-maven-plugin.version>4.8.1</scala-maven-plugin.version>
+
+        <!-- Spark -->
+        <spark.version>${spark-35.version}</spark.version>
+        <spark-22.version>2.2.2</spark-22.version>
+        <spark-23.version>2.3.2</spark-23.version>
+        <spark-24.version>2.4.2</spark-24.version>
+        <spark-30.version>3.0.0</spark-30.version>
+        <spark-31.version>3.1.1.0</spark-31.version>
+        <spark-33.version>3.3.0</spark-33.version>
+        <spark-35.version>3.5.0</spark-35.version>
+        <artifact.spark.version></artifact.spark.version>
+        <spark.scope>provided</spark.scope>
+    </properties>
+
     <dependencies>
         <dependency>
             <groupId>org.scala-lang</groupId>
@@ -86,12 +117,14 @@
             <groupId>org.apache.spark</groupId>
             <artifactId>spark-core_${scala.major.version}</artifactId>
             <version>${spark.version}</version>
+            <scope>${spark.scope}</scope>
         </dependency>
 
         <dependency>
             <groupId>org.apache.spark</groupId>
             <artifactId>spark-sql_${scala.major.version}</artifactId>
             <version>${spark.version}</version>
+            <scope>${spark.scope}</scope>
         </dependency>
 
         <dependency>
@@ -422,6 +455,91 @@
                 </plugins>
             </build>
         </profile>
+
+        <!-- In logicalclocks/deequ@1.1.0 we have multiple profiles. They are not anymore in awslabs/deequ-->
+
+        <!-- <profile>
+            <id>spark-2.2-scala-2.11</id>
+            <properties>
+                <spark.version>${spark-22.version}</spark.version>
+                <scala.major.version>${scala-211.major.version}</scala.major.version>
+                <scala.version>${scala.major.version}.10</scala.version>
+                <artifact.scala.version>_scala-${scala.major.version}</artifact.scala.version>
+                <artifact.spark.version>_spark-${spark.version}</artifact.spark.version>
+            </properties>
+        </profile>
+        <profile>
+            <id>spark-2.3-scala-2.11</id>
+            <properties>
+                <spark.version>${spark-23.version}</spark.version>
+                <scala.major.version>${scala-211.major.version}</scala.major.version>
+                <scala.version>${scala.major.version}.10</scala.version>
+                <artifact.scala.version>_scala-${scala.major.version}</artifact.scala.version>
+                <artifact.spark.version>_spark-${spark.version}</artifact.spark.version>
+            </properties>
+        </profile>
+        <profile>
+            <id>spark-2.4-scala-2.11</id>
+            <properties>
+                <spark.version>${spark-24.version}</spark.version>
+                <scala.major.version>${scala-211.major.version}</scala.major.version>
+                <scala.version>${scala.major.version}.10</scala.version>
+                <artifact.scala.version>_scala-${scala.major.version}</artifact.scala.version>
+                <artifact.spark.version>_spark-${spark.version}</artifact.spark.version>
+            </properties>
+        </profile>
+        <profile>
+            <id>spark-3.0-scala-2.12</id>
+            <properties>
+                <spark.version>${spark-30.version}</spark.version>
+                <scala.major.version>${scala-212.major.version}</scala.major.version>
+                <scala.version>${scala.major.version}.10</scala.version>
+                <artifact.scala.version>_scala-${scala.major.version}</artifact.scala.version>
+                <artifact.spark.version>_spark-${spark.version}</artifact.spark.version>
+            </properties>
+        </profile>
+        <profile>
+            <id>spark-3.1-scala-2.12</id>
+            <properties>
+                <spark.version>${spark-31.version}</spark.version>
+                <scala.major.version>${scala-212.major.version}</scala.major.version>
+                <scala.version>${scala.major.version}.10</scala.version>
+                <artifact.scala.version>_scala-${scala.major.version}</artifact.scala.version>
+                <artifact.spark.version>_spark-${spark.version}</artifact.spark.version>
+            </properties>
+        </profile>
+        <profile>
+            <id>spark-3.3-scala-2.12</id>
+            <properties>
+                <spark.version>${spark-330.version}</spark.version>
+                <scala.major.version>${scala-212.major.version}</scala.major.version>
+                <scala.version>${scala.major.version}.10</scala.version>
+                <artifact.scala.version>_scala-${scala.major.version}</artifact.scala.version>
+                <artifact.spark.version>_spark-${spark.version}</artifact.spark.version>
+            </properties>
+        </profile> -->
     </profiles>
+
+    <repositories>
+        <repository>
+            <id>Hops</id>
+            <name>Hops Repo</name>
+            <url>https://archiva.hops.works/repository/Hops/</url>
+            <releases>
+                <enabled>true</enabled>
+            </releases>
+            <snapshots>
+                <enabled>true</enabled>
+            </snapshots>
+        </repository>
+    </repositories>
+
+    <distributionManagement>
+        <repository>
+            <id>Hops</id>
+            <name>Hops Repo</name>
+            <url>https://archiva.hops.works/repository/Hops/</url>
+        </repository>
+    </distributionManagement>
 
 </project>

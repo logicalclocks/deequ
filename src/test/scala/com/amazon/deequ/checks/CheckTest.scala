@@ -71,8 +71,6 @@ class CheckTest extends AnyWordSpec with Matchers with SparkContextSpec with Fix
       val context = runChecks(getDfCompleteAndInCompleteColumns(sparkSession),
         check1, check2, check3, check4)
 
-      context.metricMap.foreach { println }
-
       assertEvaluatesTo(check1, context, CheckStatus.Success)
       assertEvaluatesTo(check2, context, CheckStatus.Error)
       assertEvaluatesTo(check3, context, CheckStatus.Warning)
@@ -112,8 +110,6 @@ class CheckTest extends AnyWordSpec with Matchers with SparkContextSpec with Fix
 
         val context = runChecks(getDfCompleteAndInCompleteColumns(sparkSession),
           check1, check2, check3)
-
-        context.metricMap.foreach { println }
 
         assertEvaluatesTo(check1, context, CheckStatus.Success)
         assertEvaluatesTo(check2, context, CheckStatus.Error)
@@ -160,8 +156,6 @@ class CheckTest extends AnyWordSpec with Matchers with SparkContextSpec with Fix
 
         val context = runChecks(getDfMissing(sparkSession),
           check1, check2, check3)
-
-        context.metricMap.foreach { println }
 
         assertEvaluatesTo(check1, context, CheckStatus.Success)
         assertEvaluatesTo(check2, context, CheckStatus.Error)
@@ -890,7 +884,6 @@ class CheckTest extends AnyWordSpec with Matchers with SparkContextSpec with Fix
       val check = Check(CheckLevel.Error, "some description")
         .containsCreditCardNumber(col, _ == 1.0)
       val context = runChecks(df, check)
-      context.allMetrics.foreach(println)
       assertEvaluatesTo(check, context, CheckStatus.Success)
     }
 

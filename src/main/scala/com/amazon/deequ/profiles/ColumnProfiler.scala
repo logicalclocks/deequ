@@ -16,6 +16,9 @@
 
 package com.amazon.deequ.profiles
 
+import scala.util.Success
+import scala.collection.mutable.ListBuffer
+import scala.collection.immutable.ListMap
 import com.amazon.deequ.analyzers.DataTypeInstances._
 import com.amazon.deequ.analyzers._
 import com.amazon.deequ.analyzers.runners.AnalysisRunBuilder
@@ -41,6 +44,9 @@ import org.apache.spark.sql.types.TimestampType
 import org.apache.spark.sql.types.{DataType => SparkDataType}
 
 import scala.util.Success
+import com.amazon.deequ.repository.{MetricsRepository, ResultKey}
+import org.apache.spark.sql.DataFrame
+import org.apache.spark.sql.types.{BinaryType, BooleanType, ByteType, DateType, DecimalType, DoubleType, FloatType, IntegerType, LongType, ShortType, StringType, StructType, TimestampType, DataType => SparkDataType}
 
 private[deequ] case class GenericColumnStatistics(
     numRecords: Long,
@@ -48,7 +54,11 @@ private[deequ] case class GenericColumnStatistics(
     knownTypes: Map[String, DataTypeInstances.Value],
     typeDetectionHistograms: Map[String, Map[String, Long]],
     approximateNumDistincts: Map[String, Long],
+    exactNumDistincts: Map[String, Long],
     completenesses: Map[String, Double],
+    distinctness: Map[String, Double],
+    entropy: Map[String, Double],
+    uniqueness: Map[String, Double],
     predefinedTypes: Map[String, DataTypeInstances.Value]) {
 
   def typeOf(column: String): DataTypeInstances.Value = {
@@ -69,7 +79,8 @@ private[deequ] case class NumericColumnStatistics(
     maxima: Map[String, Double],
     sums: Map[String, Double],
     kll: Map[String, BucketDistribution],
-    approxPercentiles: Map[String, Seq[Double]]
+    approxPercentiles: Map[String, Seq[Double]],
+    correlation: Map[String, Map[String, Double]]
 )
 
 private[deequ] case class CategoricalColumnStatistics(histograms: Map[String, Distribution])
@@ -119,6 +130,8 @@ object ColumnProfiler {
       reuseExistingResultsUsingKey: Option[ResultKey] = None,
       failIfResultsForReusingMissing: Boolean = false,
       saveInMetricsRepositoryUsingKey: Option[ResultKey] = None,
+      correlation: Boolean = true,
+      histogram: Boolean = true,
       kllProfiling: Boolean = false,
       kllParameters: Option[KLLParameters] = None,
       predefinedTypes: Map[String, DataTypeInstances.Value] = Map.empty)
@@ -179,7 +192,7 @@ object ColumnProfiler {
 
     // We compute mean, stddev, min, max for all numeric columns
     val analyzersForSecondPass = getAnalyzersForSecondPass(relevantColumns,
-      genericStatistics, kllProfiling, kllParameters)
+      genericStatistics, kllProfiling, kllParameters, correlation)
 
     var analysisRunnerSecondPass = AnalysisRunner
       .onData(castedDataForSecondPass)
@@ -196,39 +209,234 @@ object ColumnProfiler {
 
     val numericStatistics = extractNumericStatistics(secondPassResults)
 
-    // Third pass
-    if (printStatusUpdates) {
-      println("### PROFILING: Computing histograms of low-cardinality columns in pass (3/3)...")
+    val thirdPassResults = histogram match {
+      case true =>
+        // Third pass
+        if (printStatusUpdates) {
+          println("### PROFILING: Computing histograms of low-cardinality columns in pass (3/3)...")
+        }
+
+        // We compute exact histograms for all low-cardinality string columns, find those here
+        val targetColumnsForHistograms = findTargetColumnsForHistograms(data.schema,
+          genericStatistics, lowCardinalityHistogramThreshold, restrictToColumns)
+
+        // Find out, if we have values for those we can reuse
+        val analyzerContextExistingValues =
+          getAnalyzerContextWithHistogramResultsForReusingIfNecessary(
+          metricsRepository,
+          reuseExistingResultsUsingKey,
+          targetColumnsForHistograms
+        )
+
+        // The columns we need to calculate the histograms for
+        val nonExistingHistogramColumns = targetColumnsForHistograms
+          .filter { column =>
+            analyzerContextExistingValues.metricMap.get(Histogram(column)).isEmpty }
+
+        // Calculate and save/append results if necessary
+        val histograms: Map[String, Distribution] = getHistogramsForThirdPass(
+          data,
+          nonExistingHistogramColumns,
+          analyzerContextExistingValues,
+          printStatusUpdates,
+          failIfResultsForReusingMissing,
+          metricsRepository,
+          saveInMetricsRepositoryUsingKey)
+        histograms
+      case _ => Map.empty[String, Distribution]
     }
 
-    // We compute exact histograms for all low-cardinality string columns, find those here
-    val targetColumnsForHistograms = findTargetColumnsForHistograms(data.schema, genericStatistics,
-      lowCardinalityHistogramThreshold)
+    createProfiles(relevantColumns, genericStatistics, stringStatistics, numericStatistics,
+      CategoricalColumnStatistics(thirdPassResults))
+  }
 
-    // Find out, if we have values for those we can reuse
-    val analyzerContextExistingValues = getAnalyzerContextWithHistogramResultsForReusingIfNecessary(
+
+  /**
+   * Profile a (potentially very large) dataset.
+   *
+   * @param dataInp                             data dataset as dataframe
+   * @param restrictToColumns                an contain a subset of columns to profile, otherwise
+   *                                         all columns will be considered
+   * @param printStatusUpdates
+   * @param lowCardinalityHistogramThreshold the maximum (estimated) number of distinct values
+   *                                         in a column until which we should compute exact
+   *                                         histograms for it (defaults to 120)
+   * @param metricsRepository                the repo to store metrics
+   * @param reuseExistingResultsUsingKey     key for reuse existing result
+   * @param failIfResultsForReusingMissing   true if we have results for reusing
+   * @param saveInMetricsRepositoryUsingKey  key for saving in metrics repo
+   * @param kllParameters                    parameters for KLL Sketches
+   *
+   * @return the profile of columns
+   */
+  // scalastyle:off argcount
+  private[deequ] def profileOptimized(
+                              dataInp: DataFrame,
+                              restrictToColumns: Option[Seq[String]] = None,
+                              printStatusUpdates: Boolean = false,
+                              lowCardinalityHistogramThreshold: Int = ColumnProfiler
+                                .DEFAULT_CARDINALITY_THRESHOLD,
+                              metricsRepository: Option[MetricsRepository] = None,
+                              reuseExistingResultsUsingKey: Option[ResultKey] = None,
+                              failIfResultsForReusingMissing: Boolean = false,
+                              saveInMetricsRepositoryUsingKey: Option[ResultKey] = None,
+                              correlation: Boolean = true,
+                              histogram: Boolean = false,
+                              exactUniqueness: Boolean = false,
+                              exactUniquenessCols: Option[Seq[String]] = None,
+                              maxCorrelationCols: Option[Int] = None,
+                              kllParameters: Option[KLLParameters] = None
+                                   )
+  : ColumnProfiles = {
+
+    // Ensure that all desired columns exist
+    restrictToColumns.foreach { restrictToColumns =>
+      restrictToColumns.foreach { columnName =>
+        require(dataInp.schema.fieldNames.contains(columnName), s"Unable to find column " +
+          s"$columnName")
+      }
+    }
+
+    // Find columns we want to profile
+    val relevantColumns = getRelevantColumns(dataInp.schema, restrictToColumns)
+
+    // We assume that data types are predefined by the schema, and skip the data type detection
+    val predefinedTypes = dataInp.schema.fields
+      .filter { column => relevantColumns.contains(column.name) }
+      .map { field =>
+        val knownType = field.dataType match {
+          case ByteType | ShortType | IntegerType | LongType => Integral
+          case FloatType | DoubleType => Fractional
+          case DecimalType() => Decimal
+          case BooleanType => Boolean
+          case StringType | TimestampType | DateType | BinaryType => String
+          case _ =>
+            println(s"Unable to map type ${field.dataType}")
+            Unknown
+        }
+
+        field.name -> knownType
+      }
+      .toMap
+
+    val numericColumnNames = relevantColumns
+      .filter { name => Set(Integral, Fractional, Decimal).contains(predefinedTypes(name)) }
+
+    // replace NaNs with null in numeric columns
+    val na_replacement = numericColumnNames.map((_, "null")).toMap
+    val data = dataInp.na.fill(na_replacement)
+
+    // First pass
+    if (printStatusUpdates) {
+      println("### PROFILING: Computing generic column statistics in pass (1/2)...")
+    }
+
+    // We compute completeness, approximate number of distinct values for all cols
+    // and min, max, mean, stddev, sum, kll and correlations for numeric cols
+    // and uniqueness, distinctness and entropy for optional cols
+    var correlationCalculatedColumnNames = new ListBuffer[String]()
+    val analyzersForGenericStats = relevantColumns.flatMap { name =>
+          val analyzers = ListBuffer[Analyzer[_, Metric[_]]]()
+
+          // Add default analyzers.
+          analyzers ++= Seq(Completeness(name), ApproxCountDistinct(name))
+
+          if (numericColumnNames.contains(name)) {
+            // Add numeric analyzers.
+            analyzers ++= Seq(Minimum(name), Maximum(name), Mean(name),
+               StandardDeviation(name), Sum(name))
+            // Add KLL analyzer.
+            if (histogram) {
+              analyzers += KLLSketch(name, kllParameters)
+            }
+            if (correlation && (maxCorrelationCols.isEmpty || (numericColumnNames.length <=
+              maxCorrelationCols.get))) {
+              // Add correlation analyzers.
+              correlationCalculatedColumnNames += name
+              analyzers ++= numericColumnNames
+                .filterNot(x => correlationCalculatedColumnNames.contains(x))
+                .map(x => Correlation(name, x))
+            }
+          }
+
+          if (exactUniqueness && (exactUniquenessCols.isEmpty ||
+            (exactUniquenessCols.isDefined && exactUniquenessCols.get.contains(name)))
+            && predefinedTypes(name) != Unknown) {
+            // Add grouping analyzers.
+            analyzers ++= Seq(Uniqueness(name), Distinctness(name), Entropy(name),
+              CountDistinct(name))
+          }
+
+          analyzers
+        }
+
+    var analysisRunnerFirstPass = AnalysisRunner
+      .onData(data)
+      .addAnalyzers(analyzersForGenericStats)
+      .addAnalyzer(Size())
+
+    analysisRunnerFirstPass = setMetricsRepositoryConfigurationIfNecessary(
+      analysisRunnerFirstPass,
       metricsRepository,
       reuseExistingResultsUsingKey,
-      targetColumnsForHistograms
-    )
-
-    // The columns we need to calculate the histograms for
-    val nonExistingHistogramColumns = targetColumnsForHistograms
-      .filter { column => analyzerContextExistingValues.metricMap.get(Histogram(column)).isEmpty }
-
-    // Calculate and save/append results if necessary
-    val histograms: Map[String, Distribution] = getHistogramsForThirdPass(
-      data,
-      nonExistingHistogramColumns,
-      analyzerContextExistingValues,
-      printStatusUpdates,
       failIfResultsForReusingMissing,
-      metricsRepository,
       saveInMetricsRepositoryUsingKey)
 
-    val thirdPassResults = CategoricalColumnStatistics(histograms)
+    val firstPassResults = analysisRunnerFirstPass.run()
 
-    createProfiles(relevantColumns, genericStatistics, stringStatistics, numericStatistics, thirdPassResults)
+    val genericStatistics = extractGenericStatistics(
+      relevantColumns,
+      data.schema,
+      firstPassResults,
+      predefinedTypes)
+
+    val stringStatistics = extractStringStatistics(firstPassResults)
+
+    val numericStatistics = if (correlation) {
+      extractNumericStatistics(firstPassResults, correlationCalculatedColumnNames)
+    } else {
+      extractNumericStatistics(firstPassResults)
+    }
+
+    val secondPassResults = histogram match {
+      case true =>
+        // Second pass
+        if (printStatusUpdates) {
+          println("### PROFILING: Computing histograms of low-cardinality columns in pass (2/2)...")
+        }
+
+        // We compute exact histograms for all low-cardinality string columns, find those here
+        val targetColumnsForHistograms = findTargetColumnsForHistograms(data.schema,
+          genericStatistics, lowCardinalityHistogramThreshold, restrictToColumns)
+
+        // Find out, if we have values for those we can reuse
+        val analyzerContextExistingValues =
+          getAnalyzerContextWithHistogramResultsForReusingIfNecessary(
+            metricsRepository,
+            reuseExistingResultsUsingKey,
+            targetColumnsForHistograms
+          )
+
+        // The columns we need to calculate the histograms for
+        val nonExistingHistogramColumns = targetColumnsForHistograms
+          .filter { column =>
+            analyzerContextExistingValues.metricMap.get(Histogram(column)).isEmpty }
+
+        // Calculate and save/append results if necessary
+        val histograms: Map[String, Distribution] = getHistogramsForThirdPass(
+          data,
+          nonExistingHistogramColumns,
+          analyzerContextExistingValues,
+          printStatusUpdates,
+          failIfResultsForReusingMissing,
+          metricsRepository,
+          saveInMetricsRepositoryUsingKey)
+        histograms
+      case _ => Map.empty[String, Distribution]
+    }
+
+    createProfiles(relevantColumns, genericStatistics, stringStatistics, numericStatistics,
+      CategoricalColumnStatistics(secondPassResults))
   }
 
   private[this] def getRelevantColumns(
@@ -261,10 +469,12 @@ object ColumnProfiler {
           Seq(
             Completeness(name), ApproxCountDistinct(name), DataType(name),
             MinLength(name, analyzerOptions = Some(analyzerOptions)),
-            MaxLength(name, analyzerOptions = Some(analyzerOptions))
+            MaxLength(name, analyzerOptions = Some(analyzerOptions)),
+            Uniqueness(name), Distinctness(name), Entropy(name)
           )
         } else {
-          Seq(Completeness(name), ApproxCountDistinct(name))
+          Seq(Completeness(name), ApproxCountDistinct(name), Uniqueness(name),
+            Distinctness(name), Entropy(name))
         }
       }
   }
@@ -273,17 +483,24 @@ object ColumnProfiler {
       relevantColumnNames: Seq[String],
       genericStatistics: GenericColumnStatistics,
       kllProfiling: Boolean,
-      kllParameters: Option[KLLParameters] = None)
+      kllParameters: Option[KLLParameters] = None,
+      correlation: Boolean)
     : Seq[Analyzer[_, Metric[_]]] = {
-      relevantColumnNames
-        .filter { name => Set(Integral, Fractional).contains(genericStatistics.typeOf(name)) }
-        .flatMap { name => getNumericColAnalyzers(name, kllProfiling, kllParameters) }
+      val numericColumnNames = relevantColumnNames
+        .filter { name => Set(Integral, Fractional).contains(genericStatistics.typeOf
+        (name)) }
+      numericColumnNames
+        .flatMap { name =>
+          getNumericColAnalyzers(name, kllProfiling, kllParameters, correlation, numericColumnNames)
+        }
     }
 
   private[this] def getNumericColAnalyzers(
       column: String,
       kllProfiling: Boolean,
-      kllParameters: Option[KLLParameters])
+      kllParameters: Option[KLLParameters],
+      correlation: Boolean,
+      numericColumnNames: Seq[String])
     : Seq[Analyzer[_, Metric[_]]] = {
       val mandatoryAnalyzers = Seq(Minimum(column), Maximum(column), Mean(column),
         StandardDeviation(column), Sum(column))
@@ -294,7 +511,13 @@ object ColumnProfiler {
         Seq.empty
       }
 
-      mandatoryAnalyzers ++ optionalAnalyzers
+      val correlationAnalyzers = if (correlation) {
+        numericColumnNames.map(x => Correlation(column, x))
+      } else {
+        Seq.empty
+      }
+
+      mandatoryAnalyzers ++ optionalAnalyzers ++ correlationAnalyzers
   }
 
   private[this] def setMetricsRepositoryConfigurationIfNecessary(
@@ -441,14 +664,35 @@ object ColumnProfiler {
         analyzer.column -> metric.value.get.toLong
       }
 
+    val exactNumDistincts = results.metricMap
+      .collect { case (analyzer: CountDistinct, metric: DoubleMetric) =>
+        analyzer.columns.head -> metric.value.get.toLong
+      }
+
     val completenesses = results.metricMap
       .collect { case (analyzer: Completeness, metric: DoubleMetric) =>
         analyzer.column -> metric.value.get
       }
 
+    val entropy = results.metricMap
+      .collect { case (analyzer: Entropy, metric: DoubleMetric) if metric.value.isSuccess =>
+        analyzer.column -> metric.value.get
+      }
+
+    val uniqueness = results.metricMap
+      .collect { case (analyzer: Uniqueness, metric: DoubleMetric) if metric.value.isSuccess =>
+        // we only compute uniqueness for single columns
+        analyzer.columns.head -> metric.value.get
+      }
+
+    val distinctness = results.metricMap
+      .collect { case (analyzer: Distinctness, metric: DoubleMetric) if metric.value.isSuccess =>
+        analyzer.columns.head -> metric.value.get
+      }
+
     val knownTypes = schema.fields
       .filter { column => columns.contains(column.name) }
-      .filterNot { column => predefinedTypes.contains(column.name)}
+      .filterNot { column => predefinedTypes.contains(column.name) }
       .filter {
         _.dataType != StringType
       }
@@ -468,7 +712,8 @@ object ColumnProfiler {
       .toMap
 
     GenericColumnStatistics(numRecords, inferredTypes, knownTypes, typeDetectionHistograms,
-      approximateNumDistincts, completenesses, predefinedTypes)
+      approximateNumDistincts, exactNumDistincts, completenesses, distinctness, entropy,
+      uniqueness, predefinedTypes)
   }
 
 
@@ -501,7 +746,9 @@ object ColumnProfiler {
   }
 
 
-  private[this] def extractNumericStatistics(results: AnalyzerContext): NumericColumnStatistics = {
+  private[this] def extractNumericStatistics(results: AnalyzerContext,
+                                             correlationCols: Seq[String] = Seq[String]())
+  : NumericColumnStatistics = {
 
     val means = results.metricMap
       .collect { case (analyzer: Mean, metric: DoubleMetric) =>
@@ -566,7 +813,7 @@ object ColumnProfiler {
       .toMap
 
     val approxPercentiles = results.metricMap
-      .collect {  case (analyzer: KLLSketch, metric: KLLMetric) =>
+      .collect { case (analyzer: KLLSketch, metric: KLLMetric) =>
         metric.value match {
           case Success(bucketDistribution) =>
 
@@ -579,33 +826,62 @@ object ColumnProfiler {
       .flatten
       .toMap
 
+    val correlationDiagonal = correlationCols.map { name =>
+      Some((name -> Map(name -> 1.0)))
+    }
+    val correlationLower = results.metricMap
+      .collect { case (analyzer: Correlation, metric: DoubleMetric) =>
+        metric.value match {
+          case Success(metricValue) =>
+            Some(analyzer.firstColumn -> Map(analyzer.secondColumn -> metricValue))
+          case _ => None
+        }
+      }
+    val correlationUpper = results.metricMap
+      .collect { case (analyzer: Correlation, metric: DoubleMetric) =>
+        metric.value match {
+          case Success(metricValue) =>
+            Some(analyzer.secondColumn -> Map(analyzer.firstColumn -> metricValue))
+          case _ => None
+        }
+      }
+    val correlation = (correlationLower ++ correlationDiagonal ++ correlationUpper).flatten
+      .groupBy(_._1)
+      .map { case (key, value) => value.reduce((x, y) => x._1 -> (x._2.toSeq ++ y._2.toSeq).toMap
+        )}
 
-    NumericColumnStatistics(means, stdDevs, minima, maxima, sums, kll, approxPercentiles)
+
+    NumericColumnStatistics(means, stdDevs, minima, maxima, sums, kll,
+      approxPercentiles, correlation)
   }
 
   /* Identifies all columns, which:
    *
-   * (1) have string, boolean, double, float, integer, long, or short data type
+   * (1) have string, boolean, double, float, integer, long, decimal, or short data type
    * (2) have less than `lowCardinalityHistogramThreshold` approximate distinct values
    */
   private[this] def findTargetColumnsForHistograms(
       schema: StructType,
       genericStatistics: GenericColumnStatistics,
-      lowCardinalityHistogramThreshold: Long)
+      lowCardinalityHistogramThreshold: Long,
+      restrictToColumns: Option[Seq[String]] = None)
     : Seq[String] = {
 
     val validSparkDataTypesForHistograms: Set[SparkDataType] = Set(
       StringType, BooleanType, DoubleType, FloatType, IntegerType, LongType, ShortType
     )
     val originalStringNumericOrBooleanColumns = schema
-      .filter { field => validSparkDataTypesForHistograms.contains(field.dataType) }
+      .filter{ field => restrictToColumns.isEmpty || restrictToColumns.get.contains(field.name) }
+      .filter { field => validSparkDataTypesForHistograms.contains(field.dataType) ||
+        genericStatistics.typeOf(field.name) == Decimal }
       .map { field => field.name }
       .toSet
 
     genericStatistics.approximateNumDistincts
       .filter { case (column, _) =>
         originalStringNumericOrBooleanColumns.contains(column) &&
-          Set(String, Boolean, Integral, Fractional).contains(genericStatistics.typeOf(column))
+          Set(String, Boolean, Integral, Fractional, Decimal).contains(genericStatistics.typeOf
+          (column))
       }
       .filter { case (_, count) => count <= lowCardinalityHistogramThreshold }
       .map { case (column, _) => column }
@@ -723,7 +999,11 @@ object ColumnProfiler {
       .map { name =>
 
         val completeness = genericStats.completenesses(name)
+        val distinctness = genericStats.distinctness.get(name)
+        val entropy = genericStats.entropy.get(name)
+        val uniqueness = genericStats.uniqueness.get(name)
         val approxNumDistinct = genericStats.approximateNumDistincts(name)
+        val exactNumDistinct = genericStats.exactNumDistincts.get(name)
         val dataType = genericStats.typeOf(name)
         val isDataTypeInferred = genericStats.inferredTypes.contains(name)
         val histogram = categoricalStats.histograms.get(name)
@@ -732,11 +1012,15 @@ object ColumnProfiler {
 
         val profile = genericStats.typeOf(name) match {
 
-          case Integral | Fractional =>
+          case Integral | Fractional | Decimal =>
             NumericColumnProfile(
               name,
               completeness,
+              distinctness,
+              entropy,
+              uniqueness,
               approxNumDistinct,
+              exactNumDistinct,
               dataType,
               isDataTypeInferred,
               typeCounts,
@@ -747,13 +1031,19 @@ object ColumnProfiler {
               numericStats.minima.get(name),
               numericStats.sums.get(name),
               numericStats.stdDevs.get(name),
-              numericStats.approxPercentiles.get(name))
+              numericStats.approxPercentiles.get(name),
+              numericStats.correlation.get(name)
+            )
 
           case String =>
             StringColumnProfile(
               name,
               completeness,
+              distinctness,
+              entropy,
+              uniqueness,
               approxNumDistinct,
+              exactNumDistinct,
               dataType,
               isDataTypeInferred,
               typeCounts,
@@ -766,7 +1056,11 @@ object ColumnProfiler {
             StandardColumnProfile(
               name,
               completeness,
+              distinctness,
+              entropy,
+              uniqueness,
               approxNumDistinct,
+              exactNumDistinct,
               dataType,
               isDataTypeInferred,
               typeCounts,

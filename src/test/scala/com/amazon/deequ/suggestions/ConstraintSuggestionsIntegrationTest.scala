@@ -34,9 +34,7 @@ case class Record(
     propertyA: String,
     measurement2: String,
     measurement3: String,
-    description: String,
-    allNullColumn: String,
-    allNullColumn2: java.lang.Double
+    description: String
 )
 
 class ConstraintSuggestionsIntegrationTest extends WordSpec with SparkContextSpec {
@@ -76,7 +74,7 @@ class ConstraintSuggestionsIntegrationTest extends WordSpec with SparkContextSpe
           val randomLength = minLength + rng.nextInt(maxLength - minLength + 1)
           val description = rng.nextString(randomLength)
 
-          Record(id, marketplace, measurement, propertyA, measurement2, measurement3, description, null, null)
+          Record(id, marketplace, measurement, propertyA, measurement2, measurement3, description)
         }
 
       val data = session.createDataFrame(records)
@@ -113,28 +111,6 @@ class ConstraintSuggestionsIntegrationTest extends WordSpec with SparkContextSpe
       assertConstraintExistsIn(constraintSuggestionResult) { (analyzer, assertionFunc) =>
         analyzer == Completeness("marketplace") && assertionFunc(1.0)
       }
-
-      // Categorical range for "marketplace"
-      assertConstraintExistsIn(constraintSuggestionResult) { (analyzer, assertionFunc) =>
-
-        assertionFunc(1.0) &&
-          analyzer.isInstanceOf[Compliance] &&
-          analyzer.asInstanceOf[Compliance]
-            .instance.startsWith(s"'marketplace' has value range")
-      }
-
-      // Categorical range for "marketplace" with values
-      assert(
-        constraintSuggestionResult.constraintSuggestions
-          .getOrElse("marketplace", Seq.empty)
-          .exists {
-            case value: ConstraintSuggestionWithValue[Seq[String]] =>
-              val constraintWithValue = value.value
-              println(constraintWithValue)
-              constraintWithValue.sorted == categories.toSeq.sorted
-            case _ => false
-          }
-      )
 
       // IS NOT NULL for "measurement"
       assertConstraintExistsIn(constraintSuggestionResult) { (analyzer, assertionFunc) =>

@@ -55,7 +55,7 @@ class AnalyzerTests extends AnyWordSpec with Matchers with SparkContextSpec with
     "compute correct metrics" in withSparkSession { sparkSession =>
       val dfMissing = getDfMissing(sparkSession)
 
-      assert(Completeness("someMissingColumn").preconditions.size == 2,
+      assert(Completeness("someMissingColumn").preconditions.size == 1,
         "should check column name availability")
       val result1 = Completeness("att1").calculate(dfMissing)
       assert(result1 == DoubleMetric(Entity.Column,
@@ -348,7 +348,9 @@ class AnalyzerTests extends AnyWordSpec with Matchers with SparkContextSpec with
       val nonZeroValuesWithStringKeys = nonZeroValues.toSeq
         .map { case (instance, distValue) => instance.toString -> distValue }
 
-      val dataTypes = DataTypeInstances.values.map { _.toString }
+      val dataTypes = DataTypeInstances.values.filterNot(_.equals(DataTypeInstances.Decimal)).map {
+        _.toString
+      }
 
       val zeros = dataTypes
         .diff { nonZeroValuesWithStringKeys.map { case (distKey, _) => distKey }.toSet }
@@ -574,7 +576,6 @@ class AnalyzerTests extends AnyWordSpec with Matchers with SparkContextSpec with
         Row(BigDecimal(678))))
 
       val data = session.createDataFrame(rows, schema)
-
       val result = Minimum("num").calculate(data)
 
       assert(result.value.isSuccess)

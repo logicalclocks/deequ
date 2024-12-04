@@ -278,6 +278,7 @@ class ConstraintSuggestionResultTest extends WordSpec with Matchers with SparkCo
               |  ]
               |}"""
               .stripMargin.replaceAll("\n", "")
+              .stripMargin.replaceAll("\r", "")
 
           assertJsonStringsAreEqual(constraintSuggestionJson, expectedJson)
         }
@@ -366,6 +367,7 @@ class ConstraintSuggestionResultTest extends WordSpec with Matchers with SparkCo
               |  ]
               |}"""
               .stripMargin.replaceAll("\n", "")
+              .stripMargin.replaceAll("\r", "")
 
           assertJsonStringsAreEqual(evaluationResultsJson, expectedJson)
         }
@@ -453,6 +455,7 @@ class ConstraintSuggestionResultTest extends WordSpec with Matchers with SparkCo
               |  ]
               |}"""
               .stripMargin.replaceAll("\n", "")
+              .stripMargin.replaceAll("\r", "")
 
           assertJsonStringsAreEqual(evaluationResultsJson, expectedJson)
         }

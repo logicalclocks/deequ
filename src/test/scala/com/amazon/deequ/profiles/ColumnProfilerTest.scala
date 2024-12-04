@@ -22,6 +22,7 @@ import com.amazon.deequ.analyzers.Histogram.NullFieldReplacement
 import com.amazon.deequ.metrics.{BucketDistribution, BucketValue, Distribution, DistributionValue}
 import com.amazon.deequ.utils.FixtureSupport
 import org.apache.spark.sql.Row
+import org.apache.spark.sql.functions.lit
 import org.apache.spark.sql.types._
 import org.scalatest.{Matchers, WordSpec}
 
@@ -60,7 +61,11 @@ class ColumnProfilerTest extends WordSpec with Matchers with SparkContextSpec
       val expectedColumnProfile = StringColumnProfile(
         "att2",
         2.0 / 3.0,
+        Some(0.5),
+        Some(0.5623351446188083),
+        Some(0.25),
         2,
+        None,
         DataTypeInstances.String,
         true,
         Map(
@@ -111,7 +116,11 @@ class ColumnProfilerTest extends WordSpec with Matchers with SparkContextSpec
       val expectedColumnProfile = StringColumnProfile(
         "item",
         1.0,
+        Some(1.0),
+        Some(1.791759469228055),
+        Some(1.0),
         6,
+        None,
         DataTypeInstances.String,
         false,
         Map(),
@@ -134,7 +143,11 @@ class ColumnProfilerTest extends WordSpec with Matchers with SparkContextSpec
       val expectedColumnProfile = StringColumnProfile(
         "att2",
         2.0 / 3.0,
+        Some(0.5),
+        Some(0.5623351446188083),
+        Some(0.25),
         2,
+        None,
         DataTypeInstances.String,
         true,
         Map(
@@ -163,7 +176,11 @@ class ColumnProfilerTest extends WordSpec with Matchers with SparkContextSpec
       val expectedColumnProfile = NumericColumnProfile(
         "item",
         1.0,
+        Some(1.0),
+        Some(1.0),
+        Some(1.0),
         6,
+        Some(6),
         DataTypeInstances.Integral,
         true,
         Map(
@@ -186,7 +203,8 @@ class ColumnProfilerTest extends WordSpec with Matchers with SparkContextSpec
           3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 4.0, 4.0, 4.0, 4.0, 4.0, 4.0, 4.0, 4.0,
           4.0, 4.0, 4.0, 4.0, 4.0, 4.0, 4.0, 4.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0,
           5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 6.0, 6.0, 6.0, 6.0, 6.0,
-          6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0)))
+          6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0)),
+        None)
 
         assertProfilesEqual(expectedColumnProfile,
           actualColumnProfile.asInstanceOf[NumericColumnProfile])
@@ -203,7 +221,11 @@ class ColumnProfilerTest extends WordSpec with Matchers with SparkContextSpec
         val expectedColumnProfile = NumericColumnProfile(
           "item",
           1.0,
+          Some(1.0),
+          Some(1.0),
+          Some(1.0),
           6,
+          Some(6),
           DataTypeInstances.Integral,
           true,
           Map(
@@ -226,7 +248,8 @@ class ColumnProfilerTest extends WordSpec with Matchers with SparkContextSpec
             3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 4.0, 4.0, 4.0, 4.0, 4.0, 4.0, 4.0, 4.0,
             4.0, 4.0, 4.0, 4.0, 4.0, 4.0, 4.0, 4.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0,
             5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 6.0, 6.0, 6.0, 6.0, 6.0,
-            6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0)))
+            6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0)),
+          None)
 
         assertProfilesEqual(expectedColumnProfile,
           actualColumnProfile.asInstanceOf[NumericColumnProfile])
@@ -244,7 +267,11 @@ class ColumnProfilerTest extends WordSpec with Matchers with SparkContextSpec
         val expectedColumnProfile = NumericColumnProfile(
           "item",
           1.0,
+          Some(1.0),
+          Some(1.0),
+          Some(1.0),
           6,
+          Some(6),
           DataTypeInstances.Integral,
           true,
           Map(
@@ -303,7 +330,8 @@ class ColumnProfilerTest extends WordSpec with Matchers with SparkContextSpec
             3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 4.0, 4.0, 4.0, 4.0, 4.0, 4.0, 4.0, 4.0,
             4.0, 4.0, 4.0, 4.0, 4.0, 4.0, 4.0, 4.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0,
             5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 6.0, 6.0, 6.0, 6.0, 6.0,
-            6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0)))
+            6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0)),
+          None)
 
         assertProfilesEqual(expectedColumnProfile,
           actualColumnProfile.asInstanceOf[NumericColumnProfile])
@@ -320,7 +348,11 @@ class ColumnProfilerTest extends WordSpec with Matchers with SparkContextSpec
       val expectedColumnProfile = NumericColumnProfile(
         "att1",
         1.0,
+        Some(1.0),
+        Some(1.0),
+        Some(1.0),
         6,
+        Some(6),
         DataTypeInstances.Fractional,
         false,
         Map.empty,
@@ -337,7 +369,8 @@ class ColumnProfilerTest extends WordSpec with Matchers with SparkContextSpec
           3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 4.0, 4.0, 4.0, 4.0, 4.0, 4.0, 4.0, 4.0,
           4.0, 4.0, 4.0, 4.0, 4.0, 4.0, 4.0, 4.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0,
           5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 6.0, 6.0, 6.0, 6.0, 6.0,
-          6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0)))
+          6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0)),
+        None)
 
         assertProfilesEqual(expectedColumnProfile,
           actualColumnProfile.asInstanceOf[NumericColumnProfile])
@@ -353,7 +386,11 @@ class ColumnProfilerTest extends WordSpec with Matchers with SparkContextSpec
       val expectedColumnProfile = StringColumnProfile(
         "att2",
         2.0 / 3.0,
+        Some(0.5),
+        Some(0.5623351446188083),
+        Some(0.25),
         2,
+        None,
         DataTypeInstances.String,
         isDataTypeInferred = true,
         Map(
@@ -561,7 +598,11 @@ class ColumnProfilerTest extends WordSpec with Matchers with SparkContextSpec
       StandardColumnProfile(
         "PassengerId",
         1.0,
+        Some(1.0),
+        Some(1.0),
+        Some(1.0),
         891,
+        Some(891),
         DataTypeInstances.Integral,
         false,
         Map.empty,
@@ -569,21 +610,67 @@ class ColumnProfilerTest extends WordSpec with Matchers with SparkContextSpec
       StandardColumnProfile(
         "Survived",
         1.0,
+        Some(1.0),
+        Some(1.0),
+        Some(1.0),
         2,
+        Some(2),
         DataTypeInstances.Integral,
         false,
         Map.empty,
         None),
-      StandardColumnProfile("Pclass", 1.0, 3, DataTypeInstances.Integral, false, Map.empty, None),
-      StandardColumnProfile("Name", 1.0, 0, DataTypeInstances.String, true, Map.empty, None),
-      StandardColumnProfile("Sex", 1.0, 2, DataTypeInstances.String, true, Map.empty, None),
-      StandardColumnProfile("Ticket", 1.0, 681, DataTypeInstances.String, true, Map.empty, None),
-      StandardColumnProfile("Fare", 1.0, 0, DataTypeInstances.Fractional, false, Map.empty, None),
-      StandardColumnProfile("Cabin", 0.22, 0, DataTypeInstances.String, true, Map.empty, None)
+      StandardColumnProfile("Pclass", 1.0, Some(1.0), Some(1.0), Some(1.0), 3, Some(3),
+        DataTypeInstances.Integral, false, Map.empty, None),
+      StandardColumnProfile("Name", 1.0, Some(1.0), Some(1.0), Some(1.0), 0, Some(0),
+        DataTypeInstances.String, true, Map.empty, None),
+      StandardColumnProfile("Sex", 1.0, Some(1.0), Some(1.0), Some(1.0), 2, Some(2),
+        DataTypeInstances.String, true, Map.empty, None),
+      StandardColumnProfile("Ticket", 1.0, Some(1.0), Some(1.0), Some(1.0), 681, Some(681),
+        DataTypeInstances.String, true, Map.empty, None),
+      StandardColumnProfile("Fare", 1.0, Some(1.0), Some(1.0), Some(1.0), 0, Some(0),
+        DataTypeInstances.Fractional, false, Map.empty, None),
+      StandardColumnProfile("Cabin", 0.22, Some(1.0), Some(1.0), Some(1.0), 0, Some(0),
+        DataTypeInstances.String, true, Map.empty, None)
     )
 
     assertSameColumnProfiles(columnProfiles.profiles, expectedProfiles)
   }
+
+  "return correct JSON for NumericColumnProfiles with NaNs" in
+    withSparkSession { session =>
+
+      val nRows = 100
+
+      import session.implicits._
+      import org.apache.spark.sql.functions
+
+      var data = session.sparkContext.range(0, nRows).toDF().select(functions.col("value"))
+      data = data.withColumnRenamed("value", "att0")
+      data = data.withColumn("att1", lit(0.0).cast(LongType))
+      data = data.withColumn("att2", lit(0.0).cast(LongType))
+
+      val profile = ColumnProfiler.profile(data, Option(Seq("att1", "att2")))
+      val profiles = profile.profiles.map{pro => pro._2}.toSeq
+      val json_profile = ColumnProfiles.toJson(profiles)
+      val correct_profile = "{\"columns\":[{\"column\":\"att1\",\"dataType\":\"Integral\"," +
+        "\"isDataTypeInferred\":\"false\",\"completeness\":1.0,\"distinctness\":0.01," +
+        "\"entropy\":0.0," +
+        "\"uniqueness\":0.0,\"approximateNumDistinctValues\":1,\"histogram\":[{\"value\":\"0\"," +
+        "\"count\":100," +
+        "\"ratio\":1.0}],\"mean\":0.0,\"maximum\":0.0,\"minimum\":0.0,\"sum\":0.0,\"stdDev\":0.0," +
+        "\"correlations\":[{\"column\":\"att2\",\"correlation\":null},{\"column\":\"att1\"," +
+        "\"correlation\":null}]," +
+        "\"approxPercentiles\":[]},{\"column\":\"att2\",\"dataType\":\"Integral\"," +
+        "\"isDataTypeInferred\":\"false\"," +
+        "\"completeness\":1.0,\"distinctness\":0.01,\"entropy\":0.0,\"uniqueness\":0.0," +
+        "\"approximateNumDistinctValues\":1,\"histogram\":[{\"value\":\"0\",\"count\":100," +
+        "\"ratio\":1.0}]," +
+        "\"mean\":0.0,\"maximum\":0.0,\"minimum\":0.0,\"sum\":0.0,\"stdDev\":0.0," +
+        "\"correlations\":[{\"column\":\"att2\",\"correlation\":null},{\"column\":\"att1\"," +
+        "\"correlation\":null}]," +
+        "\"approxPercentiles\":[]}]}"
+        assert(json_profile == correct_profile)
+    }
 
   private[this] def assertSameColumnProfiles(
       actualProfiles: Map[String, ColumnProfile],
